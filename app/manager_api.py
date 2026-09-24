@@ -40,6 +40,10 @@ def paths() -> M.ManagerPaths:
     return _paths
 
 
+def agy_path() -> str:
+    return M.resolve_agy_binary(CFG.agy_binary)
+
+
 def _ser(obj):
     if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
         return dataclasses.asdict(obj)

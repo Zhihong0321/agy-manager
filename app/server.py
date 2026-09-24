@@ -252,7 +252,8 @@ def login_stream(sid: str, offset: int = Query(default=0)) -> dict:
     session = pty_login.get(sid)
     if session is None:
         raise HTTPException(status_code=404, detail="no such login session")
-    return {**session.view(), **session.since(offset)}
+    raw = session.since(offset)
+    return {**session.view(), **raw, "data": pty_login.strip_ansi(raw["data"])}
 
 
 @r.post("/api/login/{sid}/input")
@@ -271,6 +272,54 @@ def login_kill(sid: str) -> dict:
         raise HTTPException(status_code=404, detail="no such login session")
     session.kill()
     return session.view()
+
+
+# --- debug ------------------------------------------------------------------
+# agy-lab had a /dom + /frame debug layer; this is its equivalent here: enough to
+# diagnose a misbehaving pty/login or a missing agy/script on a live deployment.
+
+@r.get("/api/debug")
+def debug() -> dict:
+    import os as _os
+    import shutil as _sh
+    import sys as _sys
+
+    agy = api.agy_path()
+    sessions = [{**v, "result": pty_login.login_result(v["id"])} for v in pty_login.list_sessions()]
+    return {
+        "python": _sys.version.split()[0],
+        "platform": _sys.platform,
+        "script": _sh.which("script"),
+        "agy_binary": CFG.agy_binary,
+        "agy_resolved": agy,
+        "agy_executable": _os.access(agy, _os.X_OK),
+        "manager_root": str(CFG.manager_root),
+        "live_dir": str(CFG.live_dir),
+        "fake_ssh": CFG.fake_ssh,
+        "prompt_timeout": CFG.prompt_timeout,
+        "login_timeout": CFG.login_timeout,
+        "login_sessions": sessions,
+    }
+
+
+@r.get("/api/debug/pty/{sid}")
+def debug_pty(
+    sid: str,
+    offset: int = Query(default=0),
+    limit: int = Query(default=4000),
+) -> dict:
+    session = pty_login.get(sid)
+    if session is None:
+        raise HTTPException(status_code=404, detail="no such login session")
+    raw = session.since(offset)
+    text = raw["data"]
+    return {
+        **session.view(),
+        "offset": raw["offset"],
+        "raw_bytes": len(text),
+        "raw": text[:limit],
+        "clean": pty_login.strip_ansi(text)[:limit],
+    }
 
 
 app.include_router(r)

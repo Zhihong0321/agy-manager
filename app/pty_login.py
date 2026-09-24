@@ -1,33 +1,55 @@
 """Interactive agy login over a pty, streamed to the browser.
 
-agy-cli-manager's login_account requires a real TTY (it hands the terminal to a
-live `agy` session). A web backend has none, so we run it under util-linux
-`script`, which allocates a pty: the OAuth URL streams out to the browser and the
-code the user pastes streams back in. This is the same mechanism agy-lab proved
-on Railway. Linux/container only — `script` is not on Windows.
+agy's *interactive* mode is a full-screen TUI that emits ANSI screen-control
+codes; a browser log box cannot render that. So we do NOT run the TUI. Instead we
+run agy in **print mode** (`agy -p ...`) inside a pty: with no credential it prints
+an OAuth URL and waits for the pasted code on the terminal — a line-based flow that
+streams cleanly. On success agy writes the token file into a temp HOME, which we
+then import into agy-cli-manager. This is the flow agy-lab proved on Railway.
+Linux/container only — `script` is not on Windows.
 """
 import os
+import re
 import shlex
+import shutil
 import signal
 import subprocess
-import sys
 import threading
 import time
+from pathlib import Path
 
 from . import config
+from . import manager_api
 
 CFG = config.CONFIG
 MAX_BUFFER = 512 * 1024
 
+LOGIN_PROMPT = "Reply with exactly: OK"
+
+# agy (and any TUI it briefly touches) emits screen-control codes. Strip them so
+# the browser log shows readable text instead of escape-code soup. Offsets still
+# count RAW bytes; only the displayed text is cleaned.
+_ANSI = re.compile(
+    r"\x1b\[[0-9;:?<>=]*[ -/]*[@-~]"         # CSI  (params may carry private markers > < = :)
+    r"|\x1b[\]_^X][^\x1b\x07]*(?:\x07|\x1b\\)"  # OSC/APC/PM/SOS (ESC_G kitty, ESC] title)
+    r"|\x1b[@-Z\\^_a-z]"                     # other two-char escapes
+    r"|[\x00-\x08\x0b\x0c\x0e-\x1f]"         # stray C0 except \t and \n
+)
+
+
+def strip_ansi(text: str) -> str:
+    return _ANSI.sub("", text)
+
 
 class PtySession:
-    def __init__(self, sid: str, command: str, env: dict):
+    def __init__(self, sid: str, command: str, env: dict, on_exit=None):
         self.id = sid
         self.command = command
         self.started_at = time.time()
         self.ended_at: float | None = None
         self.exit_code: int | None = None
         self.running = True
+        self.on_exit = on_exit
 
         self._chunks: list[bytes] = []
         self._bytes = 0
@@ -73,6 +95,11 @@ class PtySession:
         self.running = False
         self.exit_code = code
         self.ended_at = time.time()
+        if self.on_exit:
+            try:
+                self.on_exit()
+            except Exception as exc:  # never let a capture failure kill the reader
+                self._push(f"\n[agy-web] capture failed: {exc}\n".encode())
 
     @property
     def total(self) -> int:
@@ -131,42 +158,67 @@ class PtySession:
 
 
 _sessions: dict[str, PtySession] = {}
+_login_results: dict[str, dict] = {}
 _counter = 0
 _registry_lock = threading.Lock()
 
 
+def _capture(temp: Path, name: str, sid: str) -> None:
+    """After the login session ends, import the temp HOME's token into the pool."""
+    token = temp / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"
+    if token.is_file():
+        try:
+            manager_api.import_current(name, str(temp))
+            _login_results[sid] = {"ok": True, "account": name, "detail": "profile captured"}
+        except Exception as exc:
+            _login_results[sid] = {"ok": False, "account": name, "detail": f"import failed: {exc}"}
+    else:
+        _login_results[sid] = {
+            "ok": False,
+            "account": name,
+            "detail": "agy exited without writing a token file (login incomplete or failed)",
+        }
+    shutil.rmtree(temp, ignore_errors=True)
+
+
 def start_login(name: str) -> PtySession:
-    """Launch `agy-cli-manager login <name>` inside a pty and return the session."""
+    """Run a headless agy OAuth login in a pty against a temp HOME."""
     global _counter
     name = name.strip()
     if not name:
         raise ValueError("account name is required")
 
+    with _registry_lock:
+        _counter += 1
+        sid = f"login{_counter}"
+
+    temp = CFG.manager_root / "login-tmp" / sid
+    temp.mkdir(parents=True, exist_ok=True)
+
+    agy = manager_api.agy_path()
     cmd = shlex.join(
         [
-            sys.executable,
-            "-m",
-            "agy_cli_manager.cli",
-            "--root",
-            str(CFG.manager_root),
-            "login",
-            name,
-            "--agy-binary",
-            CFG.agy_binary,
+            agy,
+            "-p",
+            LOGIN_PROMPT,
+            "--output-format",
+            "text",
+            "--print-timeout",
+            f"{CFG.login_timeout}s",
         ]
     )
 
     env = dict(os.environ)
+    env["HOME"] = str(temp)
     env["TERM"] = "xterm-256color"
     if CFG.fake_ssh:
         env["SSH_CONNECTION"] = "10.0.0.2 52344 10.0.0.1 22"
         env["SSH_CLIENT"] = "10.0.0.2 52344 22"
         env["SSH_TTY"] = "/dev/pts/0"
 
+    session = PtySession(sid, cmd, env, on_exit=lambda: _capture(temp, name, sid))
+
     with _registry_lock:
-        _counter += 1
-        sid = f"login{_counter}"
-        session = PtySession(sid, cmd, env)
         _sessions[sid] = session
         # Keep the last few finished sessions for post-mortem; drop older ones.
         for key in list(_sessions):
@@ -183,3 +235,7 @@ def get(sid: str) -> PtySession | None:
 
 def list_sessions() -> list[dict]:
     return [s.view() for s in _sessions.values()]
+
+
+def login_result(sid: str) -> dict | None:
+    return _login_results.get(sid)
