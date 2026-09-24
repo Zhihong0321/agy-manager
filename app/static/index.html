@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>agy-web · Antigravity account manager</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <!-- Token gate -->
+  <div id="gate" class="gate hidden">
+    <form id="gate-form" class="gate-card">
+      <h1>agy-web</h1>
+      <p class="muted">Enter the server token (<code>AGY_WEB_TOKEN</code>) to continue.</p>
+      <input id="gate-token" type="password" placeholder="Bearer token" autocomplete="off" />
+      <button type="submit">Unlock</button>
+      <p id="gate-error" class="error hidden"></p>
+    </form>
+  </div>
+
+  <div id="app" class="app hidden">
+    <header class="topbar">
+      <div class="brand">agy-web</div>
+      <div class="topstats">
+        <span class="pill">active: <b id="hdr-active">—</b></span>
+        <span class="pill">mode: <b id="hdr-mode">—</b></span>
+        <span class="pill" id="hdr-watch">log-watch: —</span>
+        <span class="pill" id="hdr-conn">…</span>
+      </div>
+      <button id="btn-logout" class="ghost" title="Clear token">lock</button>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="accounts">Accounts</button>
+      <button class="tab" data-tab="add">Add account</button>
+      <button class="tab" data-tab="prompt">Prompt</button>
+      <button class="tab" data-tab="settings">Settings</button>
+    </nav>
+
+    <!-- Accounts -->
+    <section id="tab-accounts" class="panel">
+      <div class="row spread">
+        <h2>Accounts</h2>
+        <div class="row">
+          <button id="btn-refresh" class="ghost">refresh</button>
+          <button id="btn-switch-next" class="ghost">switch next</button>
+          <button id="btn-ensure" class="ghost">ensure active</button>
+        </div>
+      </div>
+      <div class="tablewrap">
+        <table id="accounts-table">
+          <thead>
+            <tr>
+              <th>Account</th><th>State</th><th>Health</th>
+              <th>Short quota</th><th>Reset</th><th>Identity</th><th>Last check</th><th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="accounts-empty" class="muted hidden">No accounts yet. Use “Add account”.</p>
+    </section>
+
+    <!-- Add account -->
+    <section id="tab-add" class="panel hidden">
+      <h2>Add account (interactive login)</h2>
+      <p class="muted">
+        Starts a real <code>agy</code> login in a pty and streams it below. Complete the
+        onboarding / paste the OAuth code, then exit agy — the profile is captured automatically.
+      </p>
+      <div class="row">
+        <input id="login-name" placeholder="account label (e.g. acct2)" />
+        <button id="btn-login-start">Start login</button>
+        <button id="btn-login-kill" class="ghost danger hidden">Kill</button>
+      </div>
+      <pre id="login-out" class="terminal"></pre>
+      <div class="row hidden" id="login-input-row">
+        <input id="login-input" placeholder="type a response / paste the code, then Send" autocomplete="off" />
+        <button id="btn-login-send">Send</button>
+      </div>
+    </section>
+
+    <!-- Prompt -->
+    <section id="tab-prompt" class="panel hidden">
+      <h2>Run a prompt</h2>
+      <div class="row">
+        <label class="muted">account</label>
+        <select id="prompt-account"></select>
+        <label class="muted">timeout (s)</label>
+        <input id="prompt-timeout" type="number" value="180" min="5" max="600" style="width:90px" />
+        <label class="muted"><input id="prompt-tools" type="checkbox" /> tools (skip permissions)</label>
+      </div>
+      <textarea id="prompt-text" rows="4" placeholder="Reply with exactly: OK"></textarea>
+      <div class="row">
+        <button id="btn-prompt-run">Run</button>
+        <span id="prompt-meta" class="muted"></span>
+      </div>
+      <pre id="prompt-out" class="terminal"></pre>
+    </section>
+
+    <!-- Settings -->
+    <section id="tab-settings" class="panel hidden">
+      <h2>Switching</h2>
+      <div class="row">
+        <label class="muted">mode</label>
+        <select id="set-mode"><option value="auto">auto</option><option value="manual">manual</option></select>
+        <button id="btn-set-mode" class="ghost">apply</button>
+      </div>
+      <div class="row">
+        <label class="muted">short threshold %</label>
+        <input id="set-threshold" type="number" step="0.5" style="width:90px" />
+        <label class="muted">refresh-fail threshold</label>
+        <input id="set-failthresh" type="number" step="1" style="width:80px" />
+        <label class="muted">candidate strategy</label>
+        <select id="set-strategy">
+          <option value="balanced">balanced</option>
+          <option value="highest-short">highest-short</option>
+          <option value="round-robin">round-robin</option>
+        </select>
+        <button id="btn-set-policy" class="ghost">apply</button>
+      </div>
+
+      <h2>Models (active account)</h2>
+      <div class="row"><button id="btn-models" class="ghost">load models</button></div>
+      <pre id="models-out" class="terminal small"></pre>
+
+      <h2>Server</h2>
+      <pre id="server-out" class="terminal small"></pre>
+    </section>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

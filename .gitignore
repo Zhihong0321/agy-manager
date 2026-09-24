@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.agy-cli-manager/
+.smoke/
+*.egg-info/
+.DS_Store

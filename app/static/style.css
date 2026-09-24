@@ -1,0 +1,79 @@
+:root {
+  --bg: #0d1117; --panel: #161b22; --panel2: #1c2330; --border: #2a3038;
+  --fg: #e6edf3; --muted: #8b949e; --accent: #4ea1ff; --green: #3fb950;
+  --yellow: #d29922; --red: #f85149; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+.hidden { display: none !important; }
+.muted { color: var(--muted); }
+.error { color: var(--red); }
+code { font-family: var(--mono); background: var(--panel2); padding: 1px 5px; border-radius: 4px; }
+h1 { font-size: 20px; margin: 0 0 6px; }
+h2 { font-size: 15px; margin: 18px 0 8px; color: var(--fg); }
+
+/* gate */
+.gate { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); }
+.gate-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 28px; width: 340px; display: flex; flex-direction: column; gap: 10px; }
+.gate-card input { padding: 10px; }
+
+/* layout */
+.app { max-width: 1080px; margin: 0 auto; padding: 16px; }
+.topbar { display: flex; align-items: center; gap: 12px; padding-bottom: 12px;
+  border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.brand { font-weight: 700; font-size: 16px; letter-spacing: .3px; }
+.topstats { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.pill { background: var(--panel2); border: 1px solid var(--border); border-radius: 999px;
+  padding: 3px 10px; font-size: 12px; color: var(--muted); }
+.pill b { color: var(--fg); }
+
+.tabs { display: flex; gap: 6px; margin: 14px 0; flex-wrap: wrap; }
+.tab { background: transparent; border: 1px solid var(--border); color: var(--muted);
+  padding: 7px 14px; border-radius: 8px; cursor: pointer; }
+.tab.active { background: var(--panel2); color: var(--fg); border-color: var(--accent); }
+
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+.row { display: flex; align-items: center; gap: 10px; margin: 8px 0; flex-wrap: wrap; }
+.row.spread { justify-content: space-between; }
+
+input, select, textarea, button {
+  font: inherit; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--panel2); color: var(--fg); padding: 8px 10px; }
+textarea { width: 100%; font-family: var(--mono); resize: vertical; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+button { cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.ghost { background: transparent; }
+button.danger { color: var(--red); }
+button.primary, .gate-card button, #btn-prompt-run, #btn-login-start {
+  background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 600; }
+
+/* table */
+.tablewrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th { color: var(--muted); font-weight: 600; }
+tr.active-row td { background: rgba(78,161,255,.07); }
+.badge { border-radius: 999px; padding: 2px 9px; font-size: 11px; border: 1px solid var(--border); }
+.b-active { color: var(--green); border-color: var(--green); }
+.b-standby { color: var(--muted); }
+.b-cooldown { color: var(--yellow); border-color: var(--yellow); }
+.b-disabled { color: var(--red); border-color: var(--red); }
+.b-bad { color: var(--red); border-color: var(--red); }
+.acts { display: flex; gap: 6px; }
+.acts button { padding: 4px 8px; font-size: 12px; }
+
+/* terminal */
+.terminal { background: #05070a; border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px; font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap;
+  word-break: break-word; min-height: 120px; max-height: 460px; overflow-y: auto; margin: 10px 0; }
+.terminal.small { min-height: 60px; max-height: 240px; }
+
+/* toast */
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 16px; z-index: 50; max-width: 80vw; }
+.toast.ok { border-color: var(--green); }
+.toast.err { border-color: var(--red); }
