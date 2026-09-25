@@ -129,6 +129,11 @@ def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html", headers={"cache-control": "no-store"})
 
 
+@app.get("/docs")
+def apidocs() -> FileResponse:
+    return FileResponse(STATIC_DIR / "apidocs.html", headers={"cache-control": "no-store"})
+
+
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # --- authenticated API ------------------------------------------------------

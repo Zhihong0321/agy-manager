@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>agy-web API — use cloud agy as an API</title>
+<link rel="stylesheet" href="/static/style.css" />
+<style>
+  .doc { max-width: 900px; margin: 0 auto; padding: 24px 16px 80px; }
+  .doc h1 { font-size: 24px; }
+  .doc h2 { margin-top: 34px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  .doc h3 { margin-top: 22px; font-size: 14px; color: var(--accent); }
+  .doc p, .doc li { color: var(--fg); }
+  .doc code { font-size: 12.5px; }
+  pre.code { background: #05070a; border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.5; }
+  table.ref { width: 100%; border-collapse: collapse; font-size: 13px; margin: 10px 0; }
+  table.ref th, table.ref td { border: 1px solid var(--border); padding: 7px 9px; text-align: left; vertical-align: top; }
+  table.ref th { background: var(--panel2); }
+  .method { font-family: var(--mono); font-weight: 700; }
+  .get { color: var(--green); } .post { color: var(--accent); } .del { color: var(--red); }
+  .note { border-left: 3px solid var(--yellow); background: var(--panel2); padding: 10px 12px; border-radius: 6px; margin: 12px 0; }
+  .warn { border-left: 3px solid var(--red); background: var(--panel2); padding: 10px 12px; border-radius: 6px; margin: 12px 0; }
+  .back { display: inline-block; margin-bottom: 16px; color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="doc">
+  <a class="back" href="/">&larr; back to app</a>
+  <h1>agy-web API</h1>
+  <p class="muted">Run the <b>Antigravity CLI (agy)</b> in the cloud as an HTTP API, across a pool of
+  Google accounts with quota-aware failover. Base URL for this deployment:
+  <code id="base">…</code></p>
+
+  <div class="warn"><b>Auth:</b> every <code>/api/*</code> route requires
+  <code>Authorization: Bearer $AGY_WEB_TOKEN</code> (the service's token). Without it you get
+  <code>401</code>. <code>/healthz</code> and this page are the only open routes.
+  <code>POST /api/prompt</code> runs real tools on the server — treat the token like a root password.</div>
+
+  <h2>Quickstart</h2>
+  <pre class="code">LAB=$(location.origin)   # e.g. https://agy.up.railway.app
+TOK=&lt;your AGY_WEB_TOKEN&gt;
+
+# 1. is it up / who is active?
+curl -s -H "Authorization: Bearer $TOK" "$LAB/api/status"
+
+# 2. run a prompt headlessly (tools auto-approved by default)
+curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+     -d '{"prompt":"Reply with exactly: OK"}' "$LAB/api/prompt"
+
+# 3. run a prompt that USES TOOLS against a workspace on the volume
+curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+     -d '{"prompt":"List the files in the cwd and count them","cwd":"/data/work","sandbox":true,"timeout":300}' \
+     "$LAB/api/prompt"</pre>
+
+  <h2>POST /api/prompt — the headless agy runner</h2>
+  <p>Runs <code>agy -p &lt;prompt&gt;</code> as one account and returns the answer. Synchronous;
+  bounded by <code>timeout</code>.</p>
+  <table class="ref">
+    <tr><th>Field</th><th>Type</th><th>Default</th><th>Meaning</th></tr>
+    <tr><td><code>prompt</code></td><td>string</td><td>required</td><td>The instruction for agy.</td></tr>
+    <tr><td><code>account</code></td><td>string</td><td>active</td><td>Pool account to run as. Omit for the active one.</td></tr>
+    <tr><td><code>tools</code></td><td>bool</td><td>server default (<b>true</b>)</td><td>Auto-approve tools (<code>--dangerously-skip-permissions</code>). Set <code>false</code> to disable.</td></tr>
+    <tr><td><code>sandbox</code></td><td>bool</td><td>server default (false)</td><td>Add <code>--sandbox</code> to restrict what auto-approved tools may touch.</td></tr>
+    <tr><td><code>cwd</code></td><td>string</td><td>account home</td><td>Workspace directory for the run. <code>HOME</code> still selects the account.</td></tr>
+    <tr><td><code>model</code></td><td>string</td><td>agy default</td><td><code>--model</code> override.</td></tr>
+    <tr><td><code>timeout</code></td><td>int (s)</td><td>180</td><td>Per-run limit; the call returns an error if exceeded.</td></tr>
+  </table>
+  <p>Response:</p>
+  <pre class="code">{ "ok": true,  "account": "you@gmail.com", "cwd": "/data/...", "ms": 13615, "exit": 0, "answer": "…" }
+{ "ok": false, "account": "…", "ms": …, "exit": …, "auth_failure": bool, "error": "…" }</pre>
+
+  <div class="note"><b>Why tools auto-approve by default:</b> a remote/print <code>agy</code> blocks on
+  tool-permission prompts that nobody can answer, and agy has <b>no per-tool allow flag</b> —
+  auto-approval is all-or-nothing. The server therefore defaults it ON
+  (<code>AGY_AUTO_APPROVE</code>) so headless calls actually complete; override per request with
+  <code>tools:false</code>, or narrow with <code>sandbox:true</code>.</div>
+  <div class="note"><b><code>cwd</code> caveat:</b> a directory agy has never trusted can trigger a
+  folder-trust prompt that headless cannot answer (the run then ends at <code>timeout</code>).
+  Prefer dirs agy already trusts, or pre-trust them.</div>
+
+  <h3>Examples in other languages</h3>
+  <pre class="code">// JavaScript / fetch
+const r = await fetch(LAB + "/api/prompt", {
+  method: "POST",
+  headers: { "Authorization": "Bearer " + TOK, "Content-Type": "application/json" },
+  body: JSON.stringify({ prompt: "Summarise the cwd in 3 bullets", sandbox: true })
+});
+const { ok, answer, error } = await r.json();</pre>
+  <pre class="code"># Python / requests
+import requests
+r = requests.post(f"{LAB}/api/prompt",
+    headers={"Authorization": f"Bearer {TOK}"},
+    json={"prompt": "Reply with exactly: OK", "timeout": 120}, timeout=140)
+print(r.json())</pre>
+
+  <h2>Accounts &amp; status</h2>
+  <table class="ref">
+    <tr><th>Method</th><th>Route</th><th>Purpose</th></tr>
+    <tr><td class="method get">GET</td><td><code>/api/status</code></td><td>Active account, switch mode/policy/runtime, log-watch, and every account's state (enabled, status, health, short/weekly quota %, reset, identity, proxy, last check).</td></tr>
+    <tr><td class="method get">GET</td><td><code>/api/verify</code></td><td>Verify saved accounts' auth/runtime usability.</td></tr>
+    <tr><td class="method get">GET</td><td><code>/api/models?name=</code></td><td><code>agy models</code> for the active or a named account.</td></tr>
+    <tr><td class="method post">POST</td><td><code>/api/switch</code> <code>{name}</code></td><td>Make an account active (instant file swap).</td></tr>
+    <tr><td class="method post">POST</td><td><code>/api/switch-next</code></td><td>Rotate to the next eligible account (skips cooldowns).</td></tr>
+    <tr><td class="method post">POST</td><td><code>/api/ensure-active</code> <code>{force?}</code></td><td>Preflight/recover a usable active account per policy.</td></tr>
+    <tr><td class="method post">POST</td><td><code>/api/rotate</code> <code>{reason, cooldown_minutes, force_switch}</code></td><td>Fail over now: mark active bad, switch to a standby.</td></tr>
+    <tr><td class="method post">POST</td><td><code>/api/accounts/{name}/enable</code> <code>{enabled}</code></td><td>Enable / disable an account.</td></tr>
+    <tr><td class="method post">POST</td><td><code>/api/accounts/{name}/mark-bad</code> <code>{reason, cooldown_minutes}</code></td><td>Mark bad + cooldown.</td></tr>
+    <tr><td class="method post">POST</td><td><code>/api/accounts/{name}/clear-bad</code></td><td>Clear bad/cooldown.</td></tr>
+    <tr><td class="method post">POST</td><td><code>/api/accounts/{name}/refresh-usage</code></td><td>Live quota refresh (runs agy / Code Assist).</td></tr>
+    <tr><td class="method del">DEL</td><td><code>/api/accounts/{name}</code></td><td>Remove the account and its saved profile.</td></tr>
+    <tr><td class="method post">POST</td><td><code>/api/import-current</code> <code>{name, source?}</code></td><td>Seed an account from an existing <code>.gemini</code> home.</td></tr>
+    <tr><td class="method get/post">GET/POST</td><td><code>/api/switch-policy</code></td><td>Read/set short-usage threshold, refresh-failure threshold, candidate strategy.</td></tr>
+    <tr><td class="method post">POST</td><td><code>/api/switch-mode</code> <code>{mode: auto|manual}</code></td><td>Whether failures auto-fail-over or just mark bad.</td></tr>
+  </table>
+
+  <h2>Enrolling accounts (interactive login)</h2>
+  <p>Starts a headless <code>agy</code> OAuth login in a pty and streams it. Open the printed URL,
+  consent, then paste the code.</p>
+  <table class="ref">
+    <tr><th>Method</th><th>Route</th><th>Purpose</th></tr>
+    <tr><td class="method post">POST</td><td><code>/api/login</code> <code>{name}</code></td><td>Start; returns a session id.</td></tr>
+    <tr><td class="method get">GET</td><td><code>/api/login/{sid}?offset=N</code></td><td>Stream output from a byte offset (poll ~1s).</td></tr>
+    <tr><td class="method post">POST</td><td><code>/api/login/{sid}/input</code> <code>{text}</code></td><td>Paste the OAuth code / answer a prompt.</td></tr>
+    <tr><td class="method post">POST</td><td><code>/api/login/{sid}/kill</code></td><td>End the session.</td></tr>
+  </table>
+  <div class="note"><b>agy only waits ~60s for the code.</b> Be signed into the Google account in
+  another tab first so consent is fast; on timeout just start again. On success the profile is
+  captured automatically and appears in <code>/api/status</code>.</div>
+
+  <h2>Debug</h2>
+  <table class="ref">
+    <tr><td class="method get">GET</td><td><code>/api/debug</code></td><td>Server/platform env, agy + <code>script</code> availability, login sessions with capture results.</td></tr>
+    <tr><td class="method get">GET</td><td><code>/api/debug/pty/{sid}</code></td><td>Raw vs ANSI-cleaned pty buffer for a login session.</td></tr>
+  </table>
+
+  <h2>Errors</h2>
+  <table class="ref">
+    <tr><th>Status</th><th>Meaning</th></tr>
+    <tr><td>401</td><td>Missing/bad bearer token.</td></tr>
+    <tr><td>400</td><td>Bad request or a manager error (e.g. unknown account, empty prompt, no active account).</td></tr>
+    <tr><td>404</td><td>Unknown route / session / account.</td></tr>
+    <tr><td>200 + <code>ok:false</code></td><td>The call ran but agy failed; read <code>error</code>. <code>auth_failure:true</code> means re-login or switch account.</td></tr>
+  </table>
+
+  <h2>Automation recipe (bots / schedulers)</h2>
+  <pre class="code">1. GET  /api/status                 # read active + switch_mode/policy
+2. POST /api/ensure-active          # preflight before real work
+3. POST /api/prompt {…}             # do the work
+4. on auth/quota failure:
+     POST /api/rotate {reason:"quota", cooldown_minutes:60}
+     retry the prompt once on the new active account
+5. optionally POST /api/accounts/{name}/refresh-usage to keep quota fresh</pre>
+
+  <p class="muted" style="margin-top:30px">Consumer Google accounts driven headless from a
+  datacenter IP are the pattern that gets accounts flagged; per-account proxies are supported by
+  the underlying manager. Keep <code>AGY_WEB_TOKEN</code> secret — <code>/api/prompt</code> with
+  tools is remote code execution on this host.</p>
+</div>
+<script>document.getElementById("base").textContent = location.origin;</script>
+</body>
+</html>
