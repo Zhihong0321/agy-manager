@@ -40,7 +40,9 @@ state on the /data volume:
 - **Prompt** (`manager_api.run_prompt`): resolves the account's profile dir, runs
   `agy -p <prompt> --print-timeout <n>s --output-format text` with `HOME` pointed at
   that profile, so it runs as that account without disturbing the shared runtime.
-  `--dangerously-skip-permissions` is **off** unless `tools:true` is passed.
+  Because a headless agy blocks on permission prompts and agy has no per-tool allow
+  flag, `--dangerously-skip-permissions` is **on by default** (`AGY_AUTO_APPROVE`);
+  `tools` overrides per request. `sandbox`, `model` and `cwd` are also settable.
 - **Login** (`pty_login.py`): `agy-cli-manager login` requires a real TTY (it hands
   the terminal to a live `agy`). We run it under util-linux `script` to allocate a
   pty, stream its output to the browser, and stream the pasted OAuth code back in —
@@ -97,6 +99,9 @@ python -m app.server                     # http://localhost:8080
 | `AGY_PROMPT_TIMEOUT` | `180` | Default per-prompt timeout (seconds) |
 | `AGY_LOGIN_TIMEOUT` | `600` | Interactive login timeout (seconds) |
 | `AGY_FAKE_SSH` | `true` | Set `SSH_*` so agy prints an OAuth URL (no browser) |
+| `AGY_AUTO_APPROVE` | `true` | Default `--dangerously-skip-permissions` on `/api/prompt` (headless needs it) |
+| `AGY_SANDBOX` | `false` | Default `--sandbox`, narrowing what auto-approved tools may touch |
+| `AGY_MODEL` | *(unset)* | Default `--model` for prompts |
 
 In the image these resolve to `/data/...` because `HOME=/data`.
 
@@ -142,6 +147,38 @@ curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/js
      -d '{"prompt":"Reply with exactly: OK"}' "$LAB/api/prompt"
 ```
 
+### Headless / API usage
+
+A remote `agy` **blocks on tool-permission prompts** that nobody can answer, and agy
+exposes **no per-tool allow flag** — auto-approval is all-or-nothing
+(`--dangerously-skip-permissions`). So for headless/API use the service defaults to
+auto-approve (`AGY_AUTO_APPROVE=true`); pass `tools:false` to disable, or
+`sandbox:true` to add `--sandbox` and narrow what auto-approved tools may touch.
+
+```bash
+# plain run (auto-approve on by default)
+curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+     -d '{"prompt":"Summarise this repo in 3 bullets"}' "$LAB/api/prompt"
+
+# auto-approve + sandbox + workspace + model + longer timeout
+curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+     -d '{"prompt":"List the files in the cwd and report counts","sandbox":true,"cwd":"/data/work","timeout":300}' \
+     "$LAB/api/prompt"
+
+# explicit no-tools run (hangs if agy wants a tool — avoid headless)
+curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+     -d '{"prompt":"Reply with exactly: OK","tools":false}' "$LAB/api/prompt"
+```
+
+Fields: `prompt` (required), `account` (default active), `timeout` (s), `tools`
+(auto-approve override), `sandbox`, `cwd` (workspace; `HOME` still selects the
+account), `model`. Response: `{ok, answer|error, account, ms, exit, cwd}`.
+
+Notes:
+- `cwd` should be a directory agy already trusts; a brand-new cwd can trigger a
+  trust prompt that headless cannot answer (the run then ends at `timeout`).
+- Runs are synchronous and bounded by `timeout`.
+
 ## Enrolling accounts
 
 **Interactive (UI → “Add account”)**: enter a label, **Start login**. The terminal
@@ -160,8 +197,10 @@ copy) and `watch`/auto-mode fails over on `Individual quota reached`.
 - The server **will not start** without `AGY_WEB_TOKEN` ≥16 chars; there is no dev
   bypass. An open `/api/prompt` on a public hostname is remote code execution via
   agy's tools.
-- `tools:true` adds `--dangerously-skip-permissions` (full tool auto-approval). It is
-  **off by default** and should stay off unless you mean it.
+- `/api/prompt` auto-approves tools by default (`AGY_AUTO_APPROVE=true`) because a
+  headless agy cannot answer permission prompts. That is **full tool auto-approval
+  with nobody watching** — pair it with `sandbox:true` and keep `cwd` scoped. Set
+  `AGY_AUTO_APPROVE=false` to force callers to opt in per request with `tools:true`.
 - Saved profiles contain live Google refresh tokens, in plaintext, on the volume.
   Treat `/data` as a secret store.
 - Consumer Google accounts driven headless from a datacenter IP are the pattern that

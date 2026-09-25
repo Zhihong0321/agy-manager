@@ -175,13 +175,22 @@ def run_prompt(
     prompt: str,
     account: str | None = None,
     timeout: int | None = None,
-    tools: bool = False,
+    tools: bool | None = None,
+    sandbox: bool | None = None,
+    cwd: str | None = None,
+    model: str | None = None,
 ) -> dict:
     """Run one prompt through agy as a given account (default: the active one).
 
     agy derives its whole home from $HOME, so pointing HOME at the account's
     profile dir runs it as that account without disturbing the shared runtime.
-    No --dangerously-skip-permissions unless tools is explicitly requested.
+
+    Headless note: a remote/print agy blocks on tool-permission prompts that nobody
+    can answer, and agy exposes no per-tool allow flag — auto-approval is
+    all-or-nothing. So --dangerously-skip-permissions is the DEFAULT here
+    (CFG.auto_approve); `tools` overrides per request. `sandbox` adds --sandbox to
+    narrow what auto-approved tools may touch. `cwd` sets the workspace (default:
+    the account home); HOME still selects the account.
     """
     if not prompt or not prompt.strip():
         raise ValueError("prompt is required")
@@ -197,12 +206,20 @@ def run_prompt(
 
     to = int(timeout or CFG.prompt_timeout)
     agy = M.resolve_agy_binary(CFG.agy_binary)
+    auto = CFG.auto_approve if tools is None else tools
+    sb = CFG.sandbox if sandbox is None else sandbox
     args = [agy, "-p", prompt, "--print-timeout", f"{to}s", "--output-format", "text"]
-    if tools:
+    if auto:
         args.append("--dangerously-skip-permissions")
+    if sb:
+        args.append("--sandbox")
+    mdl = model or CFG.default_model
+    if mdl:
+        args += ["--model", mdl]
 
     env = dict(os.environ)
     env["HOME"] = str(home)
+    workdir = Path(cwd).expanduser() if cwd else home
 
     started = time.time()
     try:
@@ -213,12 +230,13 @@ def run_prompt(
             errors="replace",
             timeout=to + 15,
             env=env,
-            cwd=str(home),
+            cwd=str(workdir),
         )
     except subprocess.TimeoutExpired:
         return {
             "ok": False,
             "account": name,
+            "cwd": str(workdir),
             "ms": int((time.time() - started) * 1000),
             "error": f"agy did not answer within {to}s (timed out).",
         }
@@ -234,10 +252,18 @@ def run_prompt(
         return {
             "ok": False,
             "account": name,
+            "cwd": str(workdir),
             "ms": ms,
             "exit": proc.returncode,
             "auth_failure": bool(AUTH_FAILURE.search(out) or AUTH_FAILURE.search(err)),
             "error": detail[:2000],
         }
 
-    return {"ok": True, "account": name, "ms": ms, "exit": proc.returncode, "answer": out}
+    return {
+        "ok": True,
+        "account": name,
+        "cwd": str(workdir),
+        "ms": ms,
+        "exit": proc.returncode,
+        "answer": out,
+    }

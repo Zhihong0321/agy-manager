@@ -260,9 +260,17 @@ async function runPrompt() {
   if (!prompt.trim()) return toast("enter a prompt", "err");
   const account = el("prompt-account").value;
   const timeout = parseInt(el("prompt-timeout").value || "180", 10);
-  const tools = el("prompt-tools").checked;
-  const body = { prompt, timeout, tools };
+  const body = {
+    prompt,
+    timeout,
+    tools: el("prompt-tools").checked,
+    sandbox: el("prompt-sandbox").checked,
+  };
   if (account && account !== "active") body.account = account;
+  const model = el("prompt-model").value.trim();
+  if (model) body.model = model;
+  const cwd = el("prompt-cwd").value.trim();
+  if (cwd) body.cwd = cwd;
   el("prompt-out").textContent = "running…";
   el("prompt-meta").textContent = "";
   try {

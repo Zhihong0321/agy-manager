@@ -45,5 +45,14 @@ class Config:
         # a remote host; a container has no browser to launch. Same trick agy-lab uses.
         self.fake_ssh = _bool("AGY_FAKE_SSH", True)
 
+        # Headless agy blocks on tool-permission prompts nobody can answer, and agy
+        # exposes no per-tool allow flag — auto-approval is all-or-nothing. Default ON
+        # so the HTTP API is usable headless; per-request `tools` still overrides.
+        self.auto_approve = _bool("AGY_AUTO_APPROVE", True)
+        # --sandbox narrows what auto-approved tools may touch. Recommended alongside
+        # auto-approve; off by default to leave existing behaviour unchanged.
+        self.sandbox = _bool("AGY_SANDBOX", False)
+        self.default_model = os.environ.get("AGY_MODEL", "")
+
 
 CONFIG = Config()

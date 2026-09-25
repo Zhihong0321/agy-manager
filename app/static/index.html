@@ -93,7 +93,14 @@
         <select id="prompt-account"></select>
         <label class="muted">timeout (s)</label>
         <input id="prompt-timeout" type="number" value="180" min="5" max="600" style="width:90px" />
-        <label class="muted"><input id="prompt-tools" type="checkbox" /> tools (skip permissions)</label>
+        <label class="muted"><input id="prompt-tools" type="checkbox" checked /> auto-approve tools</label>
+        <label class="muted"><input id="prompt-sandbox" type="checkbox" /> sandbox</label>
+        <label class="muted">model</label>
+        <input id="prompt-model" placeholder="(default)" style="width:130px" />
+      </div>
+      <div class="row">
+        <label class="muted">cwd</label>
+        <input id="prompt-cwd" placeholder="(account home)" style="flex:1;min-width:200px" />
       </div>
       <textarea id="prompt-text" rows="4" placeholder="Reply with exactly: OK"></textarea>
       <div class="row">

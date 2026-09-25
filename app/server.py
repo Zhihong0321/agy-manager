@@ -64,7 +64,10 @@ class PromptIn(BaseModel):
     prompt: str
     account: str | None = None
     timeout: int | None = None
-    tools: bool = False
+    tools: bool | None = None
+    sandbox: bool | None = None
+    cwd: str | None = None
+    model: str | None = None
 
 
 class NameIn(BaseModel):
@@ -140,7 +143,16 @@ def status() -> dict:
 
 @r.post("/api/prompt")
 def prompt(body: PromptIn) -> dict:
-    return guard(api.run_prompt, body.prompt, body.account, body.timeout, body.tools)
+    return guard(
+        api.run_prompt,
+        body.prompt,
+        body.account,
+        body.timeout,
+        body.tools,
+        body.sandbox,
+        body.cwd,
+        body.model,
+    )
 
 
 @r.post("/api/switch")
