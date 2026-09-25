@@ -65,8 +65,13 @@
     <section id="tab-add" class="panel hidden">
       <h2>Add account (interactive login)</h2>
       <p class="muted">
-        Starts a real <code>agy</code> login in a pty and streams it below. Complete the
-        onboarding / paste the OAuth code, then exit agy — the profile is captured automatically.
+        Starts a headless <code>agy</code> OAuth login in a pty and streams it below.
+        Open the printed URL, sign in / consent, then <b>paste the code and Send</b>.
+        The profile is captured automatically when agy exits.
+      </p>
+      <p class="muted" style="color:var(--yellow)">
+        ⚠ agy only waits <b>~60 seconds</b> for the code. Be signed into the Google account
+        in another tab first so consent is fast; if it times out, just Start login again.
       </p>
       <div class="row">
         <input id="login-name" placeholder="account label (e.g. acct2)" />
