@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import config
+from . import jobs
 from . import manager_api as api
 from . import pty_login
 
@@ -36,6 +37,7 @@ app = FastAPI(title="agy-web", docs_url=None, redoc_url=None)
 @app.on_event("startup")
 def _startup() -> None:
     api.init()
+    jobs.load()
 
 
 def require_auth(
@@ -171,6 +173,35 @@ def prompt(body: PromptIn) -> dict:
         body.cwd,
         body.model,
     )
+
+
+@r.post("/api/jobs")
+def job_submit(body: PromptIn) -> dict:
+    """Async version of /api/prompt: returns {job_id} at once; poll GET /api/jobs/{id}."""
+    return guard(
+        jobs.submit,
+        body.prompt,
+        body.account,
+        body.timeout,
+        body.tools,
+        body.sandbox,
+        body.cwd,
+        body.model,
+    )
+
+
+@r.get("/api/jobs")
+def job_list() -> dict:
+    return {"jobs": jobs.listing()}
+
+
+@r.get("/api/jobs/{jid}")
+def job_get(jid: str, wait: float = Query(default=0)) -> dict:
+    """Job status/result. `wait` (seconds, max 25) long-polls until the job finishes."""
+    job = jobs.get(jid, wait)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such job (finished jobs are kept 24h)")
+    return job
 
 
 @r.post("/api/switch")

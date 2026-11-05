@@ -256,7 +256,22 @@ def main():
             payload["account"] = args.account
         worker_target = args.account or "active worker"
         print(f"[cloud agy: running prompt on {worker_target}...]")
-        res = http_request(args.url, "/api/prompt", args.token, data=payload)
+        # Async job: a blocking /api/prompt is cut with HTTP 502 after ~5 min by the proxy.
+        try:
+            job = http_request(args.url, "/api/jobs", args.token, data=payload)
+        except RuntimeError as exc:
+            if "HTTP 404" not in str(exc) and "HTTP 405" not in str(exc):
+                raise
+            job = None  # older hub without /api/jobs
+        if job is None:
+            res = http_request(args.url, "/api/prompt", args.token, data=payload)
+        else:
+            import time
+            res = job
+            while res.get("status") not in ("done", "failed"):
+                res = http_request(args.url, f"/api/jobs/{job['job_id']}?wait=20", args.token)
+                if res.get("status") not in ("done", "failed"):
+                    time.sleep(0.2)
         if res.get("ok"):
             print(res.get("answer", ""))
         else:

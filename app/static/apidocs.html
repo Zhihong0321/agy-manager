@@ -55,7 +55,10 @@ curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/js
 
   <h2>POST /api/prompt — the headless agy runner</h2>
   <p>Runs <code>agy -p &lt;prompt&gt;</code> as one account and returns the answer. Synchronous;
-  bounded by <code>timeout</code>.</p>
+  bounded by <code>timeout</code>. <b>The proxy cuts any request after ~5 minutes (HTTP 502)</b>, so for long
+  tasks use <code>POST /api/jobs</code> (same body, returns <code>job_id</code> at once), then poll
+  <code>GET /api/jobs/{job_id}?wait=20</code> until <code>status</code> is <code>done</code> or <code>failed</code>
+  (same result fields as /api/prompt). <code>GET /api/jobs</code> lists the last 24 h of jobs.</p>
   <table class="ref">
     <tr><th>Field</th><th>Type</th><th>Default</th><th>Meaning</th></tr>
     <tr><td><code>prompt</code></td><td>string</td><td>required</td><td>The instruction for agy.</td></tr>

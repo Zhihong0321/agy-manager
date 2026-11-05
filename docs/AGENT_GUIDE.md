@@ -98,6 +98,34 @@ Executes a prompt against a cloud worker.
   }
   ```
 
+> **`/api/prompt` is cut off after ~5 minutes** by the Railway proxy (`HTTP 502: upstream error`),
+> because it holds the connection open until agy finishes. Use it only for short prompts. For anything
+> that may run longer, use the async jobs below.
+
+---
+
+### `POST /api/jobs` — Run a Task in the Background (submit, then poll)
+Same body as `/api/prompt` (and `timeout` may be up to 3600 s), but it returns at once with a job id.
+The agent runs in the background; no HTTP request stays open longer than ~25 s.
+
+* **Submit**: `POST /api/jobs` -> `{"job_id": "...", "status": "queued", "account": "...", ...}`
+  (`400` for an empty prompt or unknown account)
+* **Poll**: `GET /api/jobs/{job_id}?wait=20` -> long-polls up to `wait` seconds (max 25) and returns as soon as
+  the job finishes. `status` is `queued` -> `running` -> `done` | `failed`. When finished it carries the same
+  fields as `/api/prompt`: `ok`, `answer` (on success) or `error` / `exit` / `auth_failure` (on failure), `ms`, `cwd`.
+* **List**: `GET /api/jobs` -> all jobs from the last 24 h (no answers).
+* Jobs for the same account run one after another; jobs for different accounts run in parallel
+  (give each parallel job its own `account`).
+* Finished jobs are kept 24 h (also across restarts). A job that was running when the server restarted
+  or redeployed comes back as `failed` with `"server restarted while the job was running"`; resubmit it.
+* `404` on poll = unknown or expired job id.
+
+```bash
+JOB=$(curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+      -d '{"prompt":"long task...","account":"leanhhu0616","timeout":1800}' $LAB/api/jobs | python -c "import sys,json;print(json.load(sys.stdin)['job_id'])")
+curl -s -H "Authorization: Bearer $TOKEN" "$LAB/api/jobs/$JOB?wait=20"     # repeat until status is done/failed
+```
+
 ---
 
 ### `GET /api/status` — Worker Pool Status
