@@ -20,7 +20,7 @@ ENV HOME=/data \
     AGY_BINARY=/data/.local/bin/agy \
     PORT=8080 \
     PYTHONUNBUFFERED=1
-RUN mkdir -p /data
+RUN mkdir -p /data /storage
 
 WORKDIR /app
 COPY requirements.txt ./

@@ -26,18 +26,32 @@ class Config:
         self.port = _int("PORT", 8080)
 
         # agy-cli-manager state (accounts/, runtime/, state.json). On the volume so
-        # the pool survives a redeploy.
-        self.manager_root = Path(
-            os.environ.get("AGY_MANAGER_ROOT") or (Path.home() / ".agy-cli-manager")
-        ).expanduser()
+        # the pool survives a redeploy. Automatically adapts to /storage or /data.
+        mgr_env = os.environ.get("AGY_MANAGER_ROOT")
+        if not mgr_env:
+            if Path("/storage").is_dir():
+                mgr_env = "/storage/.agy-cli-manager"
+            elif Path("/data").is_dir():
+                mgr_env = "/data/.agy-cli-manager"
+        self.manager_root = Path(mgr_env or (Path.home() / ".agy-cli-manager")).expanduser()
 
         # The live agy home the manager syncs the active profile into. agy-cli-manager
-        # also reads AGY_MANAGER_LIVE_DIR itself (default_live_dir), so this is mainly
-        # for display and the explicit set-live-dir endpoint.
+        # also reads AGY_MANAGER_LIVE_DIR itself (default_live_dir).
         live = os.environ.get("AGY_MANAGER_LIVE_DIR")
+        if not live:
+            if Path("/storage").is_dir():
+                live = "/storage/.gemini"
+            elif Path("/data").is_dir():
+                live = "/data/.gemini"
         self.live_dir = Path(live).expanduser() if live else (Path.home() / ".gemini")
 
-        self.agy_binary = os.environ.get("AGY_BINARY") or shutil.which("agy") or "agy"
+        agy_bin = os.environ.get("AGY_BINARY")
+        if not agy_bin:
+            if Path("/storage/.local/bin/agy").is_file():
+                agy_bin = "/storage/.local/bin/agy"
+            elif Path("/data/.local/bin/agy").is_file():
+                agy_bin = "/data/.local/bin/agy"
+        self.agy_binary = agy_bin or shutil.which("agy") or "agy"
         self.prompt_timeout = _int("AGY_PROMPT_TIMEOUT", 180)
         self.login_timeout = _int("AGY_LOGIN_TIMEOUT", 600)
 
