@@ -22,7 +22,7 @@ class Config:
     def __init__(self) -> None:
         # Bearer token guarding every /api/* route. Mandatory: this server can run
         # prompts and read live Google credentials, so an open port is a shell.
-        self.token = os.environ.get("AGY_WEB_TOKEN", "")
+        self.token = os.environ.get("AGY_WEB_TOKEN", "").strip()
         self.port = _int("PORT", 8080)
 
         # agy-cli-manager state (accounts/, runtime/, state.json). On the volume so
@@ -53,6 +53,11 @@ class Config:
         # auto-approve; off by default to leave existing behaviour unchanged.
         self.sandbox = _bool("AGY_SANDBOX", False)
         self.default_model = os.environ.get("AGY_MODEL", "")
+
+        # ACP (Agent Client Protocol) server options (v1.5.0+)
+        self.acp_auto_approve = _bool("AGY_ACP_AUTO_APPROVE", True)
+        self.acp_sandbox = _bool("AGY_ACP_SANDBOX", False)
+        self.acp_process_per_session = _bool("AGY_ACP_PROCESS_PER_SESSION", False)
 
 
 CONFIG = Config()

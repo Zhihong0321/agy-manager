@@ -94,6 +94,14 @@ r = requests.post(f"{LAB}/api/prompt",
     json={"prompt": "Reply with exactly: OK", "timeout": 120}, timeout=140)
 print(r.json())</pre>
 
+  <h2>Antigravity CLI (1.5.0+) &amp; ACP Remote Bridge</h2>
+  <table class="ref">
+    <tr><th>Method</th><th>Route</th><th>Purpose</th></tr>
+    <tr><td class="method get">GET</td><td><code>/api/agy/version</code></td><td>Check installed agy CLI version on the cloud server.</td></tr>
+    <tr><td class="method post">POST</td><td><code>/api/agy/update</code></td><td>Trigger <code>agy update</code> on the cloud container to update to latest agy.</td></tr>
+    <tr><td class="method get">WS</td><td><code>/api/acp/ws?token=&amp;account=</code></td><td><b>ACP WebSocket Bridge:</b> bi-directional tunnel to cloud <code>agy acp --stdio</code>. Connect editors (like Zed) or <code>scripts/agy_remote.py</code> to execute agent turns entirely in the cloud.</td></tr>
+  </table>
+
   <h2>Accounts &amp; status</h2>
   <table class="ref">
     <tr><th>Method</th><th>Route</th><th>Purpose</th></tr>

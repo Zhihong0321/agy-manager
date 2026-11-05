@@ -102,6 +102,7 @@ async function loadStatus() {
 }
 
 function renderHeader(s) {
+  el("hdr-version").textContent = s.agy_version ? ("v" + s.agy_version) : "—";
   el("hdr-active").textContent = s.active || "none";
   el("hdr-mode").textContent = s.switch_mode || "—";
   const lw = s.log_watch || {};
@@ -191,6 +192,26 @@ function renderSettings(s) {
   if (p.short_usage_threshold_percent != null) el("set-threshold").value = p.short_usage_threshold_percent;
   if (p.refresh_failure_threshold != null) el("set-failthresh").value = p.refresh_failure_threshold;
   if (p.candidate_strategy) el("set-strategy").value = p.candidate_strategy;
+  if (s.agy_version) el("cli-version").textContent = s.agy_version;
+
+  const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
+  const wsInput = el("acp-ws-url");
+  if (wsInput) wsInput.value = `${wsProto}//${location.host}/api/acp/ws?token=${getToken()}`;
+}
+
+async function updateCli() {
+  const out = el("cli-update-out");
+  out.classList.remove("hidden");
+  out.textContent = "Checking / updating agy CLI…";
+  try {
+    const r = await api("/api/agy/update", { method: "POST" });
+    out.textContent = `[exit ${r.exit}] version: ${r.version}\n\n${r.output || ""}`;
+    toast(r.ok ? `agy is up to date (${r.version})` : "update finished with warnings");
+    loadStatus();
+  } catch (e) {
+    out.textContent = "ERROR: " + e.message;
+    toast(e.message, "err");
+  }
 }
 
 function renderServer(s) {
@@ -206,12 +227,17 @@ async function startLogin() {
   if (!name) return toast("enter an account label", "err");
   el("login-out").textContent = "";
   loginOffset = 0;
+  el("login-result-banner").className = "login-result hidden";
+  el("login-result-banner").textContent = "";
+  el("step-2-box").classList.add("hidden");
+  el("step-3-box").classList.add("hidden");
+  el("login-input").value = "";
+  el("btn-open-auth-link").href = "#";
   el("btn-login-kill").classList.remove("hidden");
-  el("login-input-row").classList.remove("hidden");
   try {
     const s = await api("/api/login", { method: "POST", body: JSON.stringify({ name }) });
     currentSid = s.id;
-    el("login-out").textContent = "[started session " + s.id + "]\n";
+    el("login-out").textContent = "[started cloud login session " + s.id + "]\n";
     pollLogin();
   } catch (e) { toast(e.message, "err"); }
 }
@@ -228,22 +254,50 @@ function pollLogin() {
         out.scrollTop = out.scrollHeight;
       }
       loginOffset = r.offset;
+
+      // When the cloud process outputs the OAuth URL, display Step 2 and Step 3
+      if (r.auth_url && el("step-2-box").classList.contains("hidden")) {
+        el("btn-open-auth-link").href = r.auth_url;
+        el("step-2-box").classList.remove("hidden");
+        el("step-3-box").classList.remove("hidden");
+        el("login-input").focus();
+        toast("Auth link received from cloud! Open it to sign in.", "ok");
+      }
+
       if (r.running) { pollLogin(); return; }
+
+      // Finished
       currentSid = null;
       el("btn-login-kill").classList.add("hidden");
-      toast("login session ended (exit " + r.exit_code + ")", r.exit_code === 0 ? "ok" : "err");
+      el("step-2-box").classList.add("hidden");
+      el("step-3-box").classList.add("hidden");
+
+      const banner = el("login-result-banner");
+      banner.classList.remove("hidden");
+      if (r.result && r.result.ok) {
+        banner.className = "login-result ok";
+        banner.textContent = `✓ Successfully authenticated as "${r.result.account}"! The account is now active on your cloud hub.`;
+        toast(`Account "${r.result.account}" ready!`, "ok");
+      } else {
+        banner.className = "login-result err";
+        const detail = (r.result && r.result.detail) || ("Process exited with code " + r.exit_code);
+        banner.textContent = `❌ Login incomplete or failed: ${detail}`;
+        toast("Login failed", "err");
+      }
       loadStatus();
-    } catch (e) { /* 401 handled in api(); otherwise stop */ currentSid = null; }
+    } catch (e) { currentSid = null; }
   }, 1000);
 }
 
 async function sendLoginInput() {
   if (!currentSid) return toast("no active login session", "err");
-  const text = el("login-input").value;
+  const text = el("login-input").value.trim();
+  if (!text) return toast("paste the authorization code or URL first", "err");
   try {
+    el("login-out").textContent += "\n> [Sending authorization code to cloud...]\n";
     await api(`/api/login/${currentSid}/input`, { method: "POST", body: JSON.stringify({ text, newline: true }) });
     el("login-input").value = "";
-    el("login-out").textContent += "\n> " + text + "\n";
+    toast("Code submitted to cloud! Finalizing login...", "ok");
   } catch (e) { toast(e.message, "err"); }
 }
 
@@ -252,6 +306,9 @@ async function killLogin() {
   try { await api(`/api/login/${currentSid}/kill`, { method: "POST" }); } catch (e) {}
   currentSid = null;
   el("btn-login-kill").classList.add("hidden");
+  el("step-2-box").classList.add("hidden");
+  el("step-3-box").classList.add("hidden");
+  toast("Login session cancelled");
 }
 
 // --- prompt -----------------------------------------------------------------
@@ -323,6 +380,18 @@ function wire() {
   el("btn-login-kill").addEventListener("click", killLogin);
   el("login-input").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); sendLoginInput(); } });
 
+  el("btn-copy-auth-link").addEventListener("click", () => {
+    const link = el("btn-open-auth-link").href;
+    if (!link || link === "#") return toast("no link yet", "err");
+    navigator.clipboard.writeText(link)
+      .then(() => toast("Auth link copied to clipboard!", "ok"))
+      .catch(() => toast("Failed to copy link", "err"));
+  });
+
+  el("btn-toggle-terminal").addEventListener("click", () => {
+    el("login-out").classList.toggle("hidden");
+  });
+
   el("btn-prompt-run").addEventListener("click", runPrompt);
 
   el("btn-set-mode").addEventListener("click", () => act("/api/switch-mode", { mode: el("set-mode").value }, "mode set"));
@@ -332,11 +401,22 @@ function wire() {
     candidate_strategy: el("set-strategy").value,
   }, "policy saved"));
   el("btn-models").addEventListener("click", loadModels);
+  el("btn-update-cli").addEventListener("click", updateCli);
+  el("btn-copy-ws").addEventListener("click", () => {
+    const input = el("acp-ws-url");
+    if (!input) return;
+    navigator.clipboard.writeText(input.value)
+      .then(() => toast("WebSocket URL copied!", "ok"))
+      .catch(() => {
+        input.select();
+        document.execCommand("copy");
+        toast("WebSocket URL copied!", "ok");
+      });
+  });
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   wire();
-  el("login-input-row").classList.add("hidden");
   if (getToken()) {
     api("/api/status").then(() => { showApp(); loadStatus(); setInterval(loadStatus, 15000); })
       .catch(() => showGate());

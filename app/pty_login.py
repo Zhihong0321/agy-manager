@@ -156,6 +156,19 @@ class PtySession:
             "bytes": self.total,
         }
 
+    def auth_url(self) -> str | None:
+        with self._lock:
+            text = b"".join(self._chunks).decode("utf-8", "replace")
+        return extract_auth_url(text)
+
+
+_OAUTH_URL_RE = re.compile(r"https://accounts\.google\.com/o/oauth2/auth\?[^\s\r\n]+")
+
+
+def extract_auth_url(text: str) -> str | None:
+    match = _OAUTH_URL_RE.search(text)
+    return match.group(0) if match else None
+
 
 _sessions: dict[str, PtySession] = {}
 _login_results: dict[str, dict] = {}
@@ -166,6 +179,16 @@ _registry_lock = threading.Lock()
 def _capture(temp: Path, name: str, sid: str) -> None:
     """After the login session ends, import the temp HOME's token into the pool."""
     token = temp / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"
+    if not token.is_file():
+        # Fallback: search recursively in case paths vary across versions
+        matches = list(temp.rglob("antigravity-oauth-token"))
+        if matches:
+            target = temp / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if matches[0] != target:
+                shutil.copy2(matches[0], target)
+            token = target
+
     if token.is_file():
         try:
             manager_api.import_current(name, str(temp))
@@ -196,17 +219,8 @@ def start_login(name: str) -> PtySession:
     temp.mkdir(parents=True, exist_ok=True)
 
     agy = manager_api.agy_path()
-    cmd = shlex.join(
-        [
-            agy,
-            "-p",
-            LOGIN_PROMPT,
-            "--output-format",
-            "text",
-            "--print-timeout",
-            f"{CFG.login_timeout}s",
-        ]
-    )
+    # In agy 1.5.0+, `agy acp --login` is the dedicated headless/terminal OAuth login command.
+    cmd = shlex.join([agy, "acp", "--login"])
 
     env = dict(os.environ)
     env["HOME"] = str(temp)

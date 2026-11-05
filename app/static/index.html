@@ -23,6 +23,7 @@
       <div class="brand">agy-web</div>
       <a href="/docs" class="pill" style="text-decoration:none">API docs</a>
       <div class="topstats">
+        <span class="pill">agy: <b id="hdr-version">—</b></span>
         <span class="pill">active: <b id="hdr-active">—</b></span>
         <span class="pill">mode: <b id="hdr-mode">—</b></span>
         <span class="pill" id="hdr-watch">log-watch: —</span>
@@ -64,26 +65,68 @@
 
     <!-- Add account -->
     <section id="tab-add" class="panel hidden">
-      <h2>Add account (interactive login)</h2>
+      <h2>Add Account (Cloud OAuth Login)</h2>
       <p class="muted">
-        Starts a headless <code>agy</code> OAuth login in a pty and streams it below.
-        Open the printed URL, sign in / consent, then <b>paste the code and Send</b>.
-        The profile is captured automatically when agy exits.
+        Connect a Google account to your Railway cloud hub in 3 clear steps:
       </p>
-      <p class="muted" style="color:var(--yellow)">
-        ⚠ agy only waits <b>~60 seconds</b> for the code. Be signed into the Google account
-        in another tab first so consent is fast; if it times out, just Start login again.
-      </p>
-      <div class="row">
-        <input id="login-name" placeholder="account label (e.g. acct2)" />
-        <button id="btn-login-start">Start login</button>
-        <button id="btn-login-kill" class="ghost danger hidden">Kill</button>
+
+      <!-- Step 1: Start -->
+      <div class="login-step" id="step-1-box">
+        <div class="step-header">
+          <span class="step-num">1</span>
+          <b>Choose Account Label</b>
+        </div>
+        <div class="row">
+          <input id="login-name" placeholder="account label (e.g. personal, work)" style="width:260px" />
+          <button id="btn-login-start" class="primary">Start Login</button>
+          <button id="btn-login-kill" class="ghost danger hidden">Cancel Session</button>
+        </div>
+      </div>
+
+      <!-- Step 2: Cloud generates link -> Open in Local Browser -->
+      <div class="login-step hidden" id="step-2-box">
+        <div class="step-header">
+          <span class="step-num">2</span>
+          <b>Authenticate in Your Local Browser</b>
+        </div>
+        <p class="muted" style="margin:4px 0 10px">
+          The cloud generated your Google authorization link. Open it in a new tab and sign in:
+        </p>
+        <div class="row">
+          <a id="btn-open-auth-link" href="#" target="_blank" rel="noopener noreferrer" class="button-link">
+            🌐 Open Google Sign-In
+          </a>
+          <button id="btn-copy-auth-link" class="ghost">📋 Copy Link</button>
+        </div>
+        <p class="muted" style="color:var(--yellow);font-size:12px;margin:8px 0 0">
+          ⚠ Google OAuth authorization codes expire in ~60s. Consent quickly and proceed to Step 3.
+        </p>
+      </div>
+
+      <!-- Step 3: Pass back Auth Code to Cloud -->
+      <div class="login-step hidden" id="step-3-box">
+        <div class="step-header">
+          <span class="step-num">3</span>
+          <b>Pass Back the Auth Code to Cloud</b>
+        </div>
+        <p class="muted" style="margin:4px 0 10px">
+          Paste <b>either the authorization code OR the full redirect URL</b> from your browser address bar:
+        </p>
+        <div class="row">
+          <input id="login-input" placeholder="Paste code or full redirect URL here..." autocomplete="off" style="flex:1;min-width:320px" />
+          <button id="btn-login-send" class="primary">🚀 Send to Cloud</button>
+        </div>
+      </div>
+
+      <!-- Result Banner -->
+      <div id="login-result-banner" class="login-result hidden"></div>
+
+      <!-- Raw Log Collapsible -->
+      <div class="row spread" style="margin-top:14px">
+        <span class="muted" style="font-size:12px">Cloud process output:</span>
+        <button id="btn-toggle-terminal" class="ghost" style="font-size:11px;padding:3px 8px">toggle raw log</button>
       </div>
       <pre id="login-out" class="terminal"></pre>
-      <div class="row hidden" id="login-input-row">
-        <input id="login-input" placeholder="type a response / paste the code, then Send" autocomplete="off" />
-        <button id="btn-login-send">Send</button>
-      </div>
     </section>
 
     <!-- Prompt -->
@@ -136,6 +179,24 @@
       <h2>Models (active account)</h2>
       <div class="row"><button id="btn-models" class="ghost">load models</button></div>
       <pre id="models-out" class="terminal small"></pre>
+
+      <h2>Antigravity CLI (agy)</h2>
+      <div class="row">
+        <span class="muted">Installed version:</span>
+        <b id="cli-version">—</b>
+        <button id="btn-update-cli" class="ghost">check / update agy</button>
+      </div>
+      <pre id="cli-update-out" class="terminal small hidden"></pre>
+
+      <h2>ACP (Agent Client Protocol) Remote Bridge</h2>
+      <p class="muted">
+        Connect your local editor (Zed, IDEs, or <code>scripts/agy_remote.py</code>) to this cloud service over WebSocket. All RAM, CPU, and models run on Railway.
+      </p>
+      <div class="row">
+        <label class="muted">WebSocket endpoint</label>
+        <input id="acp-ws-url" readonly style="flex:1;min-width:280px" />
+        <button id="btn-copy-ws" class="ghost">copy URL</button>
+      </div>
 
       <h2>Server</h2>
       <pre id="server-out" class="terminal small"></pre>

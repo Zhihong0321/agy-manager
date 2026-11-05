@@ -7,11 +7,16 @@ container.
 It is a thin web layer over [`zcop/agy-cli-manager`](https://github.com/zcop/agy-cli-manager),
 which owns the account pool, quota tracking and failover. `agy-web` adds:
 
-1. **A management UI** — auth/login, the multi-account pool, and per-account status
+1. **A management UI** — auth/login (via `agy acp --login`), the multi-account pool, and per-account status
    (active/standby/cooldown/disabled, health, short-window quota, reset countdown,
-   identity, proxy).
+   identity, proxy, and agy version).
 2. **A prompt API** — `POST /api/prompt {prompt}` runs `agy -p` as the active (or a
    named) account and returns the answer.
+3. **An ACP WebSocket Bridge** — `WS /api/acp/ws?token=...` bridges to `agy acp --stdio`,
+   allowing remote code editors (like Zed) or local CLI clients to run agentic coding
+   entirely in the cloud, offloading RAM and CPU from your local PC.
+4. **Auto-updating agy CLI** — checks and updates agy binary on container start and provides
+   `POST /api/agy/update` for one-click in-place updates.
 
 ## Why a container (and not native Windows)
 
@@ -136,6 +141,9 @@ and `/` are open.
 | `POST /api/switch-mode` | `{mode: auto\|manual}` |
 | `POST /api/set-live-dir` | `{dir}` |
 | `POST /api/apply-active` | re-sync the active profile into live_dir |
+| `GET /api/agy/version` | current installed agy CLI version |
+| `POST /api/agy/update` | runs `agy update` to upgrade binary to latest |
+| `WS /api/acp/ws` | ACP WebSocket bridge to `agy acp --stdio` |
 
 ### Example
 
@@ -178,6 +186,31 @@ Notes:
 - `cwd` should be a directory agy already trusts; a brand-new cwd can trigger a
   trust prompt that headless cannot answer (the run then ends at `timeout`).
 - Runs are synchronous and bounded by `timeout`.
+
+## Remote ACP (Agent Client Protocol) Usage
+
+With `agy 1.5.0`+, you can run `agy` completely in your Railway cloud container while connecting local editors (like Zed) or terminal clients to it over WebSocket. This **frees your local PC RAM and CPU** while keeping the agent environment persistent.
+
+### 1. Using Zed (or any ACP-compatible editor)
+
+Run the included local bridge script `scripts/agy_remote.py` to pipe local stdio to Railway's ACP WebSocket:
+
+```bash
+# Install local bridge dependency
+pip install websockets
+
+# Configure your editor's agent settings to run:
+python scripts/agy_remote.py --url wss://your-service.up.railway.app --token $AGY_WEB_TOKEN
+```
+
+### 2. Using the Local Remote Prompt CLI
+
+Run prompts or check status on cloud agy directly from your local terminal:
+
+```bash
+python scripts/agy_remote.py --url https://your-service.up.railway.app --token $AGY_WEB_TOKEN -p "Explain how to optimize Dockerfiles"
+python scripts/agy_remote.py --url https://your-service.up.railway.app --token $AGY_WEB_TOKEN --status
+```
 
 ## Enrolling accounts
 

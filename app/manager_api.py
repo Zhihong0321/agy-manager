@@ -44,6 +44,49 @@ def agy_path() -> str:
     return M.resolve_agy_binary(CFG.agy_binary)
 
 
+def agy_version() -> str:
+    """Return the installed agy version string (e.g. '1.5.0')."""
+    try:
+        agy = agy_path()
+        proc = subprocess.run([agy, "--version"], capture_output=True, text=True, timeout=5)
+        out = (proc.stdout or "").strip()
+        return out if out else "unknown"
+    except Exception:
+        return "unknown"
+
+
+def update_agy() -> dict:
+    """Run `agy update` to update the agy CLI binary to latest."""
+    started = time.time()
+    try:
+        agy = agy_path()
+        proc = subprocess.run(
+            [agy, "update"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        ms = int((time.time() - started) * 1000)
+        output = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+        ver = agy_version()
+        return {
+            "ok": proc.returncode == 0,
+            "exit": proc.returncode,
+            "version": ver,
+            "output": output,
+            "ms": ms,
+        }
+    except Exception as exc:
+        ms = int((time.time() - started) * 1000)
+        return {
+            "ok": False,
+            "exit": -1,
+            "version": agy_version(),
+            "output": str(exc),
+            "ms": ms,
+        }
+
+
 def _ser(obj):
     if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
         return dataclasses.asdict(obj)
@@ -64,6 +107,7 @@ def info() -> dict:
         "live_dir": snap.get("live_dir"),
         "agy_binary": CFG.agy_binary,
         "agy_resolved": M.resolve_agy_binary(CFG.agy_binary),
+        "agy_version": agy_version(),
         "active": snap.get("active"),
         "switch_mode": snap.get("switch_mode"),
         "switch_policy": snap.get("switch_policy"),

@@ -3,11 +3,14 @@
 Blocking work (manager calls, agy subprocesses) runs in sync `def` endpoints so
 FastAPI dispatches them to a threadpool instead of stalling the event loop.
 """
+import asyncio
 import hmac
+import json
+import os
 import sys
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -146,6 +149,16 @@ def status() -> dict:
     return guard(api.info)
 
 
+@r.get("/api/agy/version")
+def agy_version() -> dict:
+    return {"version": api.agy_version()}
+
+
+@r.post("/api/agy/update")
+def agy_update() -> dict:
+    return guard(api.update_agy)
+
+
 @r.post("/api/prompt")
 def prompt(body: PromptIn) -> dict:
     return guard(
@@ -270,7 +283,13 @@ def login_stream(sid: str, offset: int = Query(default=0)) -> dict:
     if session is None:
         raise HTTPException(status_code=404, detail="no such login session")
     raw = session.since(offset)
-    return {**session.view(), **raw, "data": pty_login.strip_ansi(raw["data"])}
+    return {
+        **session.view(),
+        **raw,
+        "data": pty_login.strip_ansi(raw["data"]),
+        "auth_url": session.auth_url(),
+        "result": pty_login.login_result(sid),
+    }
 
 
 @r.post("/api/login/{sid}/input")
@@ -278,7 +297,8 @@ def login_input(sid: str, body: InputIn) -> dict:
     session = pty_login.get(sid)
     if session is None:
         raise HTTPException(status_code=404, detail="no such login session")
-    ok = session.write(body.text, body.newline)
+    clean_text = body.text.strip()
+    ok = session.write(clean_text, body.newline)
     return {**session.view(), "written": ok}
 
 
@@ -309,12 +329,15 @@ def debug() -> dict:
         "script": _sh.which("script"),
         "agy_binary": CFG.agy_binary,
         "agy_resolved": agy,
+        "agy_version": api.agy_version(),
         "agy_executable": _os.access(agy, _os.X_OK),
         "manager_root": str(CFG.manager_root),
         "live_dir": str(CFG.live_dir),
         "fake_ssh": CFG.fake_ssh,
         "prompt_timeout": CFG.prompt_timeout,
         "login_timeout": CFG.login_timeout,
+        "acp_auto_approve": CFG.acp_auto_approve,
+        "acp_sandbox": CFG.acp_sandbox,
         "login_sessions": sessions,
     }
 
@@ -340,6 +363,151 @@ def debug_pty(
 
 
 app.include_router(r)
+
+
+# --- ACP (Agent Client Protocol) WebSocket Bridge ---------------------------
+
+async def handle_acp_ws(
+    websocket: WebSocket,
+    token: str | None = None,
+    account: str | None = None,
+) -> None:
+    supplied = token or ""
+    if not supplied or not hmac.compare_digest(supplied, CFG.token):
+        await websocket.close(code=1008, reason="bad or missing token")
+        return
+
+    await websocket.accept()
+
+    snap = api.snapshot()
+    acct = account or snap.get("active")
+    if not acct:
+        err_msg = json.dumps({
+            "jsonrpc": "2.0",
+            "error": {"code": -32603, "message": "No active agy account configured on server."},
+        })
+        await websocket.send_text(err_msg)
+        await websocket.close(code=1011, reason="no active account")
+        return
+
+    try:
+        home = api.account_home(acct)
+    except Exception as exc:
+        err_msg = json.dumps({
+            "jsonrpc": "2.0",
+            "error": {"code": -32603, "message": f"Invalid account {acct}: {exc}"},
+        })
+        await websocket.send_text(err_msg)
+        await websocket.close(code=1011, reason="account not found")
+        return
+
+    agy = api.agy_path()
+    cmd = [agy, "acp", "--stdio"]
+    if CFG.acp_auto_approve:
+        cmd.append("--dangerously-skip-permissions")
+    if CFG.acp_sandbox:
+        cmd.append("--sandbox")
+    if CFG.acp_process_per_session:
+        cmd.append("--process-per-session")
+
+    env = dict(os.environ)
+    env["HOME"] = str(home)
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+            cwd=str(home),
+        )
+    except Exception as exc:
+        err_msg = json.dumps({
+            "jsonrpc": "2.0",
+            "error": {"code": -32603, "message": f"Failed to spawn agy acp: {exc}"},
+        })
+        await websocket.send_text(err_msg)
+        await websocket.close(code=1011, reason="spawn error")
+        return
+
+    async def ws_to_stdin():
+        try:
+            while True:
+                data = await websocket.receive_text()
+                if not data:
+                    continue
+                if proc.stdin and not proc.stdin.is_closing():
+                    proc.stdin.write(data.encode("utf-8") + b"\n")
+                    await proc.stdin.drain()
+        except (WebSocketDisconnect, asyncio.CancelledError):
+            pass
+        except Exception:
+            pass
+        finally:
+            if proc.stdin and not proc.stdin.is_closing():
+                try:
+                    proc.stdin.close()
+                except Exception:
+                    pass
+
+    async def stdout_to_ws():
+        try:
+            while True:
+                line = await proc.stdout.readline()
+                if not line:
+                    break
+                text = line.decode("utf-8", "replace").strip()
+                if text:
+                    await websocket.send_text(text)
+        except (WebSocketDisconnect, asyncio.CancelledError):
+            pass
+        except Exception:
+            pass
+
+    async def drain_stderr():
+        try:
+            while True:
+                line = await proc.stderr.readline()
+                if not line:
+                    break
+        except Exception:
+            pass
+
+    tasks = [
+        asyncio.create_task(ws_to_stdin()),
+        asyncio.create_task(stdout_to_ws()),
+        asyncio.create_task(drain_stderr()),
+    ]
+
+    try:
+        await asyncio.wait(tasks[:2], return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for t in tasks:
+            t.cancel()
+        if proc.returncode is None:
+            try:
+                proc.terminate()
+                await asyncio.wait_for(proc.wait(), timeout=3.0)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+@app.websocket("/api/acp/ws")
+@app.websocket("/ws/acp")
+async def websocket_acp(
+    websocket: WebSocket,
+    token: str | None = Query(default=None),
+    account: str | None = Query(default=None),
+):
+    await handle_acp_ws(websocket, token=token, account=account)
 
 
 @app.exception_handler(HTTPException)
