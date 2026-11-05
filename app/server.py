@@ -21,9 +21,9 @@ from . import pty_login
 
 CFG = config.CONFIG
 
-if len(CFG.token) < 16:
+if not CFG.token:
     sys.stderr.write(
-        "AGY_WEB_TOKEN is missing or shorter than 16 characters. Refusing to start.\n"
+        "AGY_WEB_TOKEN is missing. Refusing to start.\n"
         "This server runs prompts and can read live credentials; an open port is a shell.\n"
     )
     sys.exit(1)
