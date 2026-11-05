@@ -149,10 +149,10 @@ def main():
         print(f"Switch Mode    : {res.get('switch_mode', 'unknown')}")
         print("Accounts Pool  :")
         for name, acct in res.get("accounts", {}).items():
-            active_mark = "★" if name == res.get("active") else " "
+            active_mark = "*" if name == res.get("active") else " "
             status = acct.get("status", "standby")
             quota = acct.get("usage_value")
-            quota_str = f"{quota}%" if quota is not None else "—"
+            quota_str = f"{quota}%" if quota is not None else "-"
             print(f"  {active_mark} {name:<12} status={status:<9} quota={quota_str}")
         return
 
