@@ -4,19 +4,32 @@
 Connects your local machine (or editor like Zed) to your Railway-hosted
 Antigravity CLI (agy), freeing your local PC's CPU and RAM.
 
-Usage:
-  1. ACP Stdio Bridge (for Zed, JetBrains, or any ACP editor):
-     python scripts/agy_remote.py --url wss://your-service.up.railway.app --token <AGY_WEB_TOKEN>
+Features:
+  1. Check & list available workers/accounts:
+     python scripts/agy_remote.py --accounts
+     python scripts/agy_remote.py --status
 
-  2. Direct Prompt (run a prompt on cloud agy from local CLI):
-     python scripts/agy_remote.py --url https://your-service.up.railway.app --token <AGY_WEB_TOKEN> -p "List files"
+  2. List available models (per worker/account):
+     python scripts/agy_remote.py --models
+     python scripts/agy_remote.py --models --account leanhhu0616
 
-  3. Cloud Status:
-     python scripts/agy_remote.py --url https://your-service.up.railway.app --token <AGY_WEB_TOKEN> --status
+  3. Live refresh quota (per worker or all):
+     python scripts/agy_remote.py --refresh-quota
+     python scripts/agy_remote.py --refresh-quota --account Nurul@eternalgy.me
+
+  4. Switch active worker:
+     python scripts/agy_remote.py --switch leanhhu0616
+     python scripts/agy_remote.py --switch-next
+
+  5. Call a specific worker with a prompt:
+     python scripts/agy_remote.py --account leanhhu0616 -p "Explain transformers"
+
+  6. ACP Stdio Bridge (for Zed, JetBrains, or any ACP editor):
+     python scripts/agy_remote.py --account leanhhu0616 --stdio
 
 Environment Variables (optional shortcuts):
-  AGY_REMOTE_URL    - e.g. https://your-service.up.railway.app
-  AGY_REMOTE_TOKEN  - your AGY_WEB_TOKEN
+  AGY_REMOTE_URL    - e.g. https://my-agy.up.railway.app
+  AGY_REMOTE_TOKEN  - e.g. vfr7106
 """
 import argparse
 import asyncio
@@ -24,6 +37,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
@@ -56,7 +70,7 @@ def http_request(base_url: str, path: str, token: str, data: dict | None = None)
         "Content-Type": "application/json",
     }
     body = json.dumps(data).encode("utf-8") if data is not None else None
-    req = urllib.request.Request(url, data=body, headers=headers, method="POST" if body else "GET")
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST" if body is not None else "GET")
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
             return json.loads(resp.read().decode("utf-8"))
@@ -86,9 +100,10 @@ async def run_acp_bridge(raw_url: str, token: str, account: str | None = None):
     ws_base = _get_ws_url(raw_url)
     ws_endpoint = f"{ws_base}/api/acp/ws?token={token}"
     if account:
-        ws_endpoint += f"&account={account}"
+        ws_endpoint += f"&account={urllib.parse.quote(account)}"
 
-    sys.stderr.write(f"[agy_remote] Connecting to cloud ACP bridge at {ws_base}...\n")
+    target_desc = f"account [{account}]" if account else "active account"
+    sys.stderr.write(f"[agy_remote] Connecting to cloud ACP bridge ({target_desc}) at {ws_base}...\n")
 
     try:
         async with websockets.connect(ws_endpoint) as ws:
@@ -97,7 +112,6 @@ async def run_acp_bridge(raw_url: str, token: str, account: str | None = None):
             loop = asyncio.get_running_loop()
 
             async def stdin_to_ws():
-                # Read line from stdin in thread to avoid blocking loop
                 while True:
                     line = await loop.run_in_executor(None, sys.stdin.readline)
                     if not line:
@@ -118,15 +132,72 @@ async def run_acp_bridge(raw_url: str, token: str, account: str | None = None):
         sys.exit(1)
 
 
+def print_accounts_table(data: dict):
+    active = data.get("active")
+    print(f"Active Worker  : {active or 'none'}")
+    print(f"agy CLI Version: {data.get('agy_version', 'unknown')}")
+    print(f"Switch Mode    : {data.get('switch_mode', 'unknown')}")
+    print("\nConnected Workers (Accounts Pool):")
+    header = f"  {'Worker Name':<24} {'State':<9} {'Health':<9} {'Short Quota':<13} {'Weekly Quota':<13} {'Email'}"
+    print(header)
+    print("  " + "-" * (len(header) - 2))
+    for name, acct in data.get("accounts", {}).items():
+        is_active = (name == active)
+        active_prefix = "* " if is_active else "  "
+        status = "active" if is_active else acct.get("status", "standby")
+        health = acct.get("health_status", "-")
+        windows = acct.get("usage_windows", {})
+        short_val = (windows.get("short") or {}).get("value")
+        weekly_val = (windows.get("weekly") or {}).get("value")
+        short_str = f"{short_val}%" if short_val is not None else (f"{acct.get('usage_value')}%" if acct.get('usage_value') is not None else "-")
+        weekly_str = f"{weekly_val}%" if weekly_val is not None else "-"
+        ident = (acct.get("identity") or {}).get("email") or (acct.get("identity") or {}).get("account_name") or "-"
+        name_display = (active_prefix + name)[:24]
+        print(f"  {name_display:<24} {status:<9} {health:<9} {short_str:<13} {weekly_str:<13} {ident}")
+
+
+def print_models(data: dict):
+    acct = data.get("account", "active")
+    models = data.get("models", [])
+    print(f"\nAvailable Models for Worker [{acct}]:")
+    print(f"  {'Model ID':<28} {'Display Name'}")
+    print(f"  {'-'*28} {'-'*30}")
+    for m in models:
+        raw_name = m.get("name", "")
+        if "Fetching available models" in raw_name or not raw_name.strip():
+            continue
+        parts = raw_name.split("\t")
+        model_id = parts[0].strip()
+        display = parts[1].strip() if len(parts) > 1 else m.get("family", "")
+        print(f"  {model_id:<28} {display}")
+
+
+def refresh_account_quota(base_url: str, token: str, account_name: str) -> dict:
+    enc_name = urllib.parse.quote(account_name)
+    res = http_request(base_url, f"/api/accounts/{enc_name}/refresh-usage", token, data={})
+    print(f"Refreshed Quota for Worker [{account_name}]:")
+    print(f"  Project ID   : {res.get('project_id', 'unknown')}")
+    print(f"  Short Quota  : {res.get('short_usage_value')}% ({res.get('short_usage_status')})")
+    print(f"  Weekly Quota : {res.get('weekly_usage_value')}% ({res.get('weekly_usage_status')})")
+    print(f"  Short Reset  : {res.get('short_reset_at', '-')}")
+    print(f"  Weekly Reset : {res.get('weekly_reset_at', '-')}")
+    return res
+
+
 def main():
     parser = argparse.ArgumentParser(description="Remote client for agy-web on Railway")
     parser.add_argument("--url", default=os.environ.get("AGY_REMOTE_URL"), help="Base URL of agy-web service")
     parser.add_argument("--token", default=os.environ.get("AGY_REMOTE_TOKEN"), help="AGY_WEB_TOKEN secret")
+    parser.add_argument("-a", "--account", help="Specific worker/account name to query or run as")
     parser.add_argument("-p", "--prompt", help="Execute a prompt headlessly on the cloud agy")
-    parser.add_argument("--account", help="Specific account name to use (default: active account)")
-    parser.add_argument("--status", action="store_true", help="Print remote cloud status and accounts")
+    parser.add_argument("--accounts", "--list", "-l", action="store_true", help="List all available workers and quotas")
+    parser.add_argument("--status", action="store_true", help="Alias for --accounts")
+    parser.add_argument("--models", action="store_true", help="List available models for the worker (or active)")
+    parser.add_argument("--refresh-quota", action="store_true", help="Live refresh quota from Google servers for worker(s)")
+    parser.add_argument("--switch", help="Switch the active worker to the specified account name")
+    parser.add_argument("--switch-next", action="store_true", help="Rotate to the next eligible worker")
     parser.add_argument("--version", action="store_true", help="Print remote agy version")
-    parser.add_argument("--stdio", action="store_true", help="Run in ACP stdio bridge mode (default if no -p/--status)")
+    parser.add_argument("--stdio", action="store_true", help="Run in ACP stdio bridge mode (default if no other flag)")
 
     args = parser.parse_args()
 
@@ -142,25 +213,49 @@ def main():
         print("Remote agy version:", res.get("version", "unknown"))
         return
 
-    if args.status:
+    if args.accounts or args.status:
         res = http_request(args.url, "/api/status", args.token)
-        print(f"Active Account : {res.get('active', 'none')}")
-        print(f"agy CLI Version: {res.get('agy_version', 'unknown')}")
-        print(f"Switch Mode    : {res.get('switch_mode', 'unknown')}")
-        print("Accounts Pool  :")
-        for name, acct in res.get("accounts", {}).items():
-            active_mark = "*" if name == res.get("active") else " "
-            status = acct.get("status", "standby")
-            quota = acct.get("usage_value")
-            quota_str = f"{quota}%" if quota is not None else "-"
-            print(f"  {active_mark} {name:<12} status={status:<9} quota={quota_str}")
+        print_accounts_table(res)
+        return
+
+    if args.switch:
+        res = http_request(args.url, "/api/switch", args.token, data={"name": args.switch})
+        print(f"Switched active worker to: {res.get('active', args.switch)}")
+        return
+
+    if args.switch_next:
+        res = http_request(args.url, "/api/switch-next", args.token, data={})
+        print(f"Rotated active worker to: {res.get('active')}")
+        return
+
+    if args.models:
+        path = f"/api/models?name={urllib.parse.quote(args.account)}" if args.account else "/api/models"
+        res = http_request(args.url, path, args.token)
+        print_models(res)
+        return
+
+    if args.refresh_quota:
+        if args.account:
+            refresh_account_quota(args.url, args.token, args.account)
+        else:
+            status_data = http_request(args.url, "/api/status", args.token)
+            accounts = list(status_data.get("accounts", {}).keys())
+            if not accounts:
+                print("No accounts in pool to refresh.")
+                return
+            for acct_name in accounts:
+                refresh_account_quota(args.url, args.token, acct_name)
+                print()
+            updated = http_request(args.url, "/api/status", args.token)
+            print_accounts_table(updated)
         return
 
     if args.prompt:
         payload = {"prompt": args.prompt}
         if args.account:
             payload["account"] = args.account
-        print(f"[cloud agy: running prompt on {args.account or 'active account'}...]")
+        worker_target = args.account or "active worker"
+        print(f"[cloud agy: running prompt on {worker_target}...]")
         res = http_request(args.url, "/api/prompt", args.token, data=payload)
         if res.get("ok"):
             print(res.get("answer", ""))

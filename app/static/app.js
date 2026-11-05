@@ -94,6 +94,7 @@ async function loadStatus() {
     renderHeader(s);
     renderAccounts(s);
     renderPromptAccounts(s);
+    renderModelsAccounts(s);
     renderSettings(s);
     renderServer(s);
   } catch (e) {
@@ -179,6 +180,20 @@ function renderPromptAccounts(s) {
   sel.innerHTML = "";
   const optActive = document.createElement("option");
   optActive.value = "active"; optActive.textContent = "(active" + (s.active ? ": " + s.active : "") + ")";
+  sel.appendChild(optActive);
+  for (const name of Object.keys(s.accounts || {})) {
+    const o = document.createElement("option"); o.value = name; o.textContent = name; sel.appendChild(o);
+  }
+  if (prev) sel.value = prev;
+}
+
+function renderModelsAccounts(s) {
+  const sel = el("models-account");
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = "";
+  const optActive = document.createElement("option");
+  optActive.value = ""; optActive.textContent = "(active" + (s.active ? ": " + s.active : "") + ")";
   sel.appendChild(optActive);
   for (const name of Object.keys(s.accounts || {})) {
     const o = document.createElement("option"); o.value = name; o.textContent = name; sel.appendChild(o);
@@ -345,9 +360,12 @@ async function runPrompt() {
 
 // --- settings actions -------------------------------------------------------
 async function loadModels() {
-  el("models-out").textContent = "loading…";
+  const sel = el("models-account");
+  const name = sel ? sel.value : "";
+  el("models-out").textContent = "loading models" + (name ? " for " + name : "") + "…";
   try {
-    const m = await api("/api/models");
+    const url = name ? `/api/models?name=${encodeURIComponent(name)}` : "/api/models";
+    const m = await api(url);
     el("models-out").textContent = JSON.stringify(m, null, 2);
   } catch (e) { el("models-out").textContent = "ERROR: " + e.message; }
 }

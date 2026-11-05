@@ -176,8 +176,12 @@
         <button id="btn-set-policy" class="ghost">apply</button>
       </div>
 
-      <h2>Models (active account)</h2>
-      <div class="row"><button id="btn-models" class="ghost">load models</button></div>
+      <h2>Models (per worker / account)</h2>
+      <div class="row">
+        <label class="muted">Worker:</label>
+        <select id="models-account"></select>
+        <button id="btn-models" class="ghost">load models</button>
+      </div>
       <pre id="models-out" class="terminal small"></pre>
 
       <h2>Antigravity CLI (agy)</h2>
