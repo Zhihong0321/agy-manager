@@ -6,6 +6,7 @@ dataclass results turned into dicts, an account-delete the CLI does not expose,
 and the prompt runner that the manager itself does not provide.
 """
 import dataclasses
+import json
 import os
 import re
 import shutil
@@ -30,6 +31,10 @@ AUTH_FAILURE = re.compile(
     r"unauthenticated|ineligibletier|unsupported_client|401",
     re.IGNORECASE,
 )
+
+
+# A conversation id as agy prints it (uuid-like); it must not start with '-' so it can never read as a flag.
+CONVERSATION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{3,79}$")
 
 
 def init() -> None:
@@ -223,8 +228,14 @@ def run_prompt(
     sandbox: bool | None = None,
     cwd: str | None = None,
     model: str | None = None,
+    conversation: str | None = None,
+    session: bool | None = None,
 ) -> dict:
     """Run one prompt through agy as a given account (default: the active one).
+
+    Same-session follow-ups: `session=True` makes the result carry `conversation_id` (and token usage,
+    including cache_read_tokens); pass that id back as `conversation` on the SAME account to continue the
+    conversation, so the earlier turns are read from cache. Without either, the call is the old one-shot.
 
     agy derives its whole home from $HOME, so pointing HOME at the account's
     profile dir runs it as that account without disturbing the shared runtime.
@@ -252,7 +263,12 @@ def run_prompt(
     agy = M.resolve_agy_binary(CFG.agy_binary)
     auto = CFG.auto_approve if tools is None else tools
     sb = CFG.sandbox if sandbox is None else sandbox
-    args = [agy, "-p", prompt, "--print-timeout", f"{to}s", "--output-format", "text"]
+    if conversation is not None and not CONVERSATION_ID.match(conversation):
+        raise ValueError("conversation must be a conversation_id from an earlier result")
+    use_json = bool(session or conversation)
+    args = [agy, "-p", prompt, "--print-timeout", f"{to}s", "--output-format", "json" if use_json else "text"]
+    if conversation:
+        args += ["--conversation", conversation]
     if auto:
         args.append("--dangerously-skip-permissions")
     if sb:
@@ -303,7 +319,7 @@ def run_prompt(
             "error": detail[:2000],
         }
 
-    return {
+    result = {
         "ok": True,
         "account": name,
         "cwd": str(workdir),
@@ -311,3 +327,16 @@ def run_prompt(
         "exit": proc.returncode,
         "answer": out,
     }
+    if use_json:
+        # Never lose the answer over the wrapper: if the JSON cannot be read, keep the raw text as the answer.
+        try:
+            d = json.loads(out)
+            result["answer"] = str(d.get("response") or "")
+            result["conversation_id"] = d.get("conversation_id")
+            result["usage"] = d.get("usage")
+            result["num_turns"] = d.get("num_turns")
+            if d.get("finished_reason"):
+                result["finished_reason"] = d.get("finished_reason")  # e.g. print_timeout: the answer may be partial
+        except Exception:
+            result["json_unreadable"] = True
+    return result

@@ -73,6 +73,8 @@ class PromptIn(BaseModel):
     sandbox: bool | None = None
     cwd: str | None = None
     model: str | None = None
+    conversation: str | None = None  # a conversation_id from an earlier result: continue that session (same account)
+    session: bool | None = None  # true: the result carries conversation_id and token usage
 
 
 class NameIn(BaseModel):
@@ -172,6 +174,8 @@ def prompt(body: PromptIn) -> dict:
         body.sandbox,
         body.cwd,
         body.model,
+        body.conversation,
+        body.session,
     )
 
 
@@ -187,6 +191,8 @@ def job_submit(body: PromptIn) -> dict:
         body.sandbox,
         body.cwd,
         body.model,
+        body.conversation,
+        body.session,
     )
 
 

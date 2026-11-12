@@ -96,6 +96,8 @@ def submit(
     sandbox: bool | None = None,
     cwd: str | None = None,
     model: str | None = None,
+    conversation: str | None = None,
+    session: bool | None = None,
 ) -> dict:
     if not prompt or not prompt.strip():
         raise ValueError("prompt is required")
@@ -117,7 +119,7 @@ def submit(
         "finished": None,
         "ok": None,
     }
-    args = dict(prompt=prompt, account=name, timeout=to, tools=tools, sandbox=sandbox, cwd=cwd, model=model)
+    args = dict(prompt=prompt, account=name, timeout=to, tools=tools, sandbox=sandbox, cwd=cwd, model=model, conversation=conversation, session=session)
     with _lock:
         _gc()
         _jobs[job["id"]] = job
@@ -138,7 +140,7 @@ def _run(jid: str, args: dict) -> None:
         except Exception as exc:  # run_prompt raises ValueError for bad input
             res = {"ok": False, "error": str(exc)[:2000]}
     job.update(
-        {k: res[k] for k in ("answer", "error", "exit", "ms", "cwd", "auth_failure") if k in res},
+        {k: res[k] for k in ("answer", "error", "exit", "ms", "cwd", "auth_failure", "conversation_id", "usage", "num_turns", "finished_reason", "json_unreadable") if k in res},
         ok=bool(res.get("ok")),
         status="done" if res.get("ok") else "failed",
         finished=time.time(),
