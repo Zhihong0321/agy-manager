@@ -28,7 +28,9 @@ _paths = M.build_paths(CFG.manager_root)
 AUTH_FAILURE = re.compile(
     r"not logged in|you are not logged into|authentication required|"
     r"not (?:authenticated|signed[- ]?in)|please (?:sign|log)[- ]?in|"
-    r"unauthenticated|ineligibletier|unsupported_client|401",
+    # 401 only as an HTTP error: a bare "401" also matched postcodes inside answers ("40170 Shah Alam") and threw them away.
+    r"unauthenticated|ineligibletier|unsupported_client|"
+    r"(?:http|status|code|error)\W{0,3}401\b|\b401\W{0,3}unauthori[sz]ed",
     re.IGNORECASE,
 )
 
