@@ -106,7 +106,6 @@ python -m app.server                     # http://localhost:8080
 | `AGY_FAKE_SSH` | `true` | Set `SSH_*` so agy prints an OAuth URL (no browser) |
 | `AGY_AUTO_APPROVE` | `true` | Default `--dangerously-skip-permissions` on `/api/prompt` (headless needs it) |
 | `AGY_SANDBOX` | `false` | Default `--sandbox`, narrowing what auto-approved tools may touch |
-| `AGY_MODEL` | *(unset)* | Default `--model` for prompts |
 
 In the image these resolve to `/data/...` because `HOME=/data`.
 

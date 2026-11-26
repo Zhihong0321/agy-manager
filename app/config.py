@@ -66,7 +66,9 @@ class Config:
         # --sandbox narrows what auto-approved tools may touch. Recommended alongside
         # auto-approve; off by default to leave existing behaviour unchanged.
         self.sandbox = _bool("AGY_SANDBOX", False)
-        self.default_model = os.environ.get("AGY_MODEL", "")
+        # Default --model for /api/prompt and /api/jobs when a request names none.
+        # Set in code (not a Railway variable) so changing it never needs the dashboard.
+        self.default_model = "gemini-4-hydrogen-medium"
 
         # ACP (Agent Client Protocol) server options (v1.5.0+)
         self.acp_auto_approve = _bool("AGY_ACP_AUTO_APPROVE", True)
